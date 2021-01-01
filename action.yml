@@ -1,0 +1,14 @@
+name: 'Comment on PR'
+author: Waschnick
+description: 'A Github Action to create comments on pull requests with templates, supporting environment variables'
+inputs:
+  who-to-greet:  # id of input
+    description: 'Who to greet'
+    required: true
+    default: 'World'
+outputs:
+  time: # id of output
+    description: 'The time we greeted you'
+runs:
+  using: 'node12'
+  main: 'index.js'

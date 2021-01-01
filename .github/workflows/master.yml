@@ -1,0 +1,124 @@
+name: Terraform, Build, Test, Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  APP_NAME: qrapp-legacy
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_DEVELOPMENT_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_DEVELOPMENT_SECRET_ACCESS_KEY }}
+  AWS_REGION: eu-central-1
+  TERRAFORM_VERSION: 0.14.0
+  TERRAFORM_WORKDIR: infrastructure
+
+jobs:
+  test-and-build:
+    name: Build docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: login to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Pre-Fetch base image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker pull $ECR_REGISTRY/qrapp-base:latest
+
+      - name: build docker app image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$APP_NAME:$IMAGE_TAG -f docker/Dockerfile .
+          docker tag $ECR_REGISTRY/$APP_NAME:$IMAGE_TAG $ECR_REGISTRY/$APP_NAME:latest
+
+      - name: Set up testing environment
+        run: make run-testing
+
+      - name: Wait for database and webserver to be alive
+        run: make wait-for-services
+
+      - name: Run unit tests
+        run: make test-unit
+
+      - name: Run container tests
+        run: make test-containers
+
+      - name: push docker app image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: docker push $ECR_REGISTRY/$APP_NAME:$IMAGE_TAG
+
+      - name: logout of AWS ECR
+        if: always()
+        run: docker logout ${{ steps.login-ecr.outputs.registry }}
+
+  terraform-validate-apply-deploy-to-development:
+    name: Terraform validate, plan, apply to DEV
+    needs: [ test-and-build ]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TERRAFORM_WORKDIR }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: login to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Run terraform format
+        run: terraform fmt -check
+
+      - name: Run terraform init
+        run: terraform init
+
+      - name: Run terraform validate
+        run: terraform validate
+
+      - name: Run terraform plan
+        run: terraform plan
+
+      - name: Run terraform apply -auto-approve
+        run: terraform apply -auto-approve
+        env:
+          TF_VAR_image: ${{ steps.login-ecr.outputs.registry }}/${{ env.APP_NAME }}:${{ github.sha }}
+          TF_VAR_git_sha: ${{ github.sha }}
+
+      - name: Get terraform output instance_id
+        id: tf_instance_id
+        run: terraform output instance_id | tr -d '"'
+
+      - name: Get terraform output instance_ip
+        id: tf_instance_ip
+        run: terraform output instance_ip | tr -d '"'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Wait for EC2 to be available
+        run: aws ec2 wait instance-status-ok --instance-ids ${{ steps.tf_instance_id.outputs.stdout }}
+
+      - name: wait for deployment to finish
+        run: aws ecs wait services-stable --cluster platform --services $APP_NAME --region $AWS_REGION
+
+      - name: logout of AWS ECR
+        if: always()
+        run: docker logout ${{ steps.login-ecr.outputs.registry }}
+
+
