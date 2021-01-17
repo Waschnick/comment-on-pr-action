@@ -15,6 +15,6 @@ jobs:
         uses: actions/checkout@master
 
       - name: Update PR and add comment for terrform plan
-        uses: Waschnick/comment-on-pr-action@master
+        uses: Waschnick/comment-on-pr-action@v1
         with:
           filename: .github/github-pull-request-template.md
