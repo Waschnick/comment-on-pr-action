@@ -1,14 +1,17 @@
 name: 'Comment on PR'
 author: Waschnick
 description: 'A Github Action to create comments on pull requests with templates, supporting environment variables'
+branding:
+  icon: alert-circle
+  color: gray-dark
 inputs:
-  who-to-greet:  # id of input
-    description: 'Who to greet'
-    required: true
-    default: 'World'
+  filename:
+    description: The name of the file to use as the issue template
+    default: .github/PR_COMMENT_TEMPLATE.md
+    required: false
 outputs:
-  time: # id of output
-    description: 'The time we greeted you'
+  url:
+    description: URL of the comment that was created
 runs:
   using: 'node12'
-  main: 'index.js'
+  main: 'dist/index.js'

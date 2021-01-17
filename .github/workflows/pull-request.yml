@@ -4,80 +4,17 @@ on:
   - pull_request
 
 env:
-  APP_NAME: qrapp-legacy
-  GITHUB_TOKEN: ${{ secrets.GH_TECH_USER_DEVELOPMENT_ACCESS_TOKEN }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_DEVELOPMENT_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_DEVELOPMENT_SECRET_ACCESS_KEY }}
-  TERRAFORM_VERSION: 0.14.0
-  TERRAFORM_WORKDIR: infrastructure
+  APP_NAME: comment-on-pr-action
 
 jobs:
   validate:
-    name: terraform validate
+    name: test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.TERRAFORM_WORKDIR }}
     steps:
       - name: checkout
         uses: actions/checkout@master
-
-      - uses: hashicorp/setup-terraform@v1
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-      - name: Run terraform format
-        run: terraform fmt -check
-
-      - name: Run terraform init
-        run: terraform init -backend-config=_environments/development/backend-dev.config
-
-      - name: Run terraform validate
-        run: terraform validate
-
-  plan:
-    name: terraform plan
-    needs: [ validate ]
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.TERRAFORM_WORKDIR }}
-    steps:
-      - name: checkout
-        uses: actions/checkout@master
-
-      - uses: hashicorp/setup-terraform@v1
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-      - name: Run terraform init
-        run: terraform init -backend-config=_environments/development/backend-dev.config
-
-      - name: Run terraform plan
-        id: plan
-        run: terraform plan -var-file=_environments/development/vars-dev.tfvars -no-color
 
       - name: Update PR and add comment for terrform plan
-        uses: actions/github-script@v2
-        if: github.event_name == 'pull_request'
-        env:
-          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        uses: Waschnick/comment-on-pr-action@master
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const output = `#### Terraform Plan \`${{ steps.plan.outcome }}\`
-
-            <details><summary>Show Plan Output</summary>
-
-            \`\`\`${process.env.PLAN}\`\`\`
-
-            </details>
-
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Working Directory: \`${{ env.tf_actions_working_dir }}\`, Workflow: \`${{ github.workflow }}\`*`;
-
-            github.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            })
+          filename: .github/github-pull-request-template.md
